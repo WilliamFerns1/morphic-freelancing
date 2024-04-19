@@ -9,7 +9,7 @@ import { ExperimentalMessage } from 'ai'
 import { Spinner } from '@/components/ui/spinner'
 import { Section } from '@/components/section'
 import { FollowupPanel } from '@/components/followup-panel'
-import { inquire, researcher, taskManager, querySuggestor } from '@/lib/agents'
+import { researcher } from '@/lib/agents'
 
 async function submit(formData?: FormData, skip?: boolean) {
   'use server'
@@ -43,23 +43,6 @@ async function submit(formData?: FormData, skip?: boolean) {
 
     let action: any = { object: { next: 'proceed' } }
     // If the user skips the task, we proceed to the search
-    if (!skip) action = (await taskManager(messages)) ?? action
-
-    if (action.object.next === 'inquire') {
-      // Generate inquiry
-      const inquiry = await inquire(uiStream, messages)
-
-      uiStream.done()
-      isGenerating.done()
-      isCollapsed.done(false)
-      aiState.done([
-        ...aiState.get(),
-        { role: 'assistant', content: `inquiry: ${inquiry?.question}` }
-      ])
-      return
-    }
-
-    // Set the collapsed state to true
     isCollapsed.done(true)
 
     //  Generate the answer
@@ -80,8 +63,6 @@ async function submit(formData?: FormData, skip?: boolean) {
 
     if (!errorOccurred) {
       // Generate related queries
-      await querySuggestor(uiStream, messages)
-
       // Add follow-up panel
       uiStream.append(
         <Section title="Follow-up">

@@ -44,6 +44,7 @@ export function ChatPanel() {
 
     // Submit and get response message
     const formData = new FormData(e.currentTarget)
+    console.log("FormData: ", formData)
     const responseMessage = await submit(formData)
     setMessages(currentMessages => [...currentMessages, responseMessage as any])
 

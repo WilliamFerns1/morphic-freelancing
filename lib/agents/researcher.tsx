@@ -12,22 +12,25 @@ import { ToolBadge } from '@/components/tool-badge'
 import { SearchSkeleton } from '@/components/search-skeleton'
 import { SearchResults } from '@/components/search-results'
 import { BotMessage } from '@/components/message'
-import Exa from 'exa-js'
 import { SearchResultsImageSection } from '@/components/search-results-image'
 import { Card } from '@/components/ui/card'
-import { SiShopify } from 'react-icons/si'
+import { ShopifyProduct, ShopifyProducts } from "@/lib/interfaces"
 
 export async function researcher(
   uiStream: ReturnType<typeof createStreamableUI>,
   streamText: ReturnType<typeof createStreamableValue<string>>,
   messages: ExperimentalMessage[]
 ) {
+
+  const openai_api_key = process.env.OPENAI_API_KEYY
+  const openai_api_model = process.env.OPENAI_API_MODEL
+
+  console.log(openai_api_key, openai_api_model)
   const openai = new OpenAI({
-    baseUrl: process.env.OPENAI_API_BASE, // optional base URL for proxies etc.
-    apiKey: process.env.OPENAI_API_KEY, // optional API key, default to env property OPENAI_API_KEY
+    // baseUrl: process.env.OPENAI_API_BASE, // optional base URL for proxies etc.
+    apiKey: openai_api_key, // optional API key, default to env property OPENAI_API_KEY
     organization: '' // optional organization
   })
-
   let fullResponse = ''
   let hasError = false
   const answerSection = (
@@ -37,11 +40,11 @@ export async function researcher(
   )
 
   const storeName = process.env.STORE_NAME
-  const storeUrl = process.env.STORE_URL
-  const storeSearchUrl = process.env.STORE_SEARCH_URL
+  const storeUrl = process.env.STORE_URL || ""
+  const storeSearchUrl = process.env.STORE_SEARCH_URL || ""
 
   const result = await experimental_streamText({
-    model: openai.chat(process.env.OPENAI_API_MODEL || 'gpt-4-turbo'),
+    model: openai.chat(openai_api_model || 'gpt-4-turbo'),
     maxTokens: 2500,
     system: `As a professional shopify product search expert, you possess the ability to search for any information on the ${storeName} shopify store. 
     For each user query, utilize the product results to their fullest potential to provide additional information and assistance in your response.
@@ -50,20 +53,18 @@ export async function researcher(
     messages,
     tools: {
       search: {
-        description: 'Search the shopfiy store for product information',
+        description: 'Search the shopfiy store for specific products',
         parameters: searchSchema,
         execute: async ({
-          query,
+          search_query,
           max_results,
-          search_depth
         }: {
-          query: string
-          max_results: number
-          search_depth: 'basic' | 'advanced'
+          search_query: string,
+          max_results: number,
         }) => {
           uiStream.update(
             <Section>
-              <ToolBadge tool="search">{`${query}`}</ToolBadge>
+              <ToolBadge tool="search">{`${search_query}`}</ToolBadge>
             </Section>
           )
 
@@ -75,44 +76,62 @@ export async function researcher(
 
           // Tavily API requires a minimum of 5 characters in the query
           const filledQuery =
-            query.length < 5 ? query + ' '.repeat(5 - query.length) : query
-          let searchResult
+            search_query.length < 5 ? search_query + ' '.repeat(5 - search_query.length) : search_query
+          
+          if (storeUrl.length < 5 || storeSearchUrl.length < 10) {
+            throw new Error(`Store url  or store search url is too short. Store Url: '${storeUrl}', Store Search Url: '${storeSearchUrl}'`)
+          }
+          
+          let searchResult: ShopifyProducts;
+
           try {
-            searchResult = shopifyStoreSearch(
+            searchResult = await shopifyStoreSearch(
               storeUrl, 
               storeSearchUrl,
               filledQuery,
-              max_results,
-              search_depth
             )
-          } catch (error) {
+          } 
+          catch (error) {
             console.error('Search API error:', error)
             hasError = true
+            throw new Error(`Search API error: ${error}`)
           }
 
+          if (searchResult["products"].length > max_results) {
+            searchResult["products"].splice(0, max_results)
+          }
+
+          let all_images_objects: string[] = [];
+          searchResult.map((product, index: number) => {
+            let images = product["images"]
+            if (images.length > 0) {
+              const imageUrl = product["images"][0]["src"]
+              all_images_objects.push(imageUrl)
+            }
+          })
+          
           if (hasError) {
-            fullResponse += `\nAn error occurred while searching for "${query}.`
+            fullResponse += `\nAn error occurred while searching for "${search_query}.`
             uiStream.update(
               <Card className="p-4 mt-2 text-sm">
-                {`An error occurred while searching for "${query}".`}
+                {`An error occurred while searching for "${search_query}".`}
               </Card>
             )
             return searchResult
           }
-
           uiStream.update(
             <Section title="Images">
               <SearchResultsImageSection
-                images={searchResult.images}
-                query={searchResult.query}
+                images={all_images_objects}
+                query={search_query}
               />
             </Section>
           )
-          uiStream.append(
-            <Section title="Sources">
-              <SearchResults results={searchResult.results} />
-            </Section>
-          )
+          // uiStream.append(
+          //   <Section title="Sources">
+          //     <SearchResults results={results} />
+          //   </Section>
+          // )
 
           uiStream.append(answerSection)
 
@@ -167,10 +186,7 @@ async function shopifyStoreSearch(
   storeUrl: string,
   storeSearchUrl: string,
   query: string,
-  maxResults: number = 10,
-  searchDepth: 'basic' | 'advanced' = 'basic'
-): Promise<any> {
-  const apiKey = process.env.TAVILY_API_KEY
+): Promise<ShopifyProductsArray> {
 
   const url = `${storeSearchUrl}${encodeURIComponent(query)}`
   const response = await fetch(url, {
