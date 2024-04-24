@@ -41,7 +41,6 @@ export async function researcher(
 
   const storeName = process.env.STORE_NAME
   const storeUrl = process.env.STORE_URL || ""
-  const storeSearchUrl = process.env.STORE_SEARCH_URL || ""
 
   const result = await experimental_streamText({
     model: openai.chat(openai_api_model || 'gpt-4-turbo'),
@@ -78,8 +77,8 @@ export async function researcher(
           const filledQuery =
             search_query.length < 5 ? search_query + ' '.repeat(5 - search_query.length) : search_query
           
-          if (storeUrl.length < 5 || storeSearchUrl.length < 10) {
-            throw new Error(`Store url  or store search url is too short. Store Url: '${storeUrl}', Store Search Url: '${storeSearchUrl}'`)
+          if (storeUrl.length < 5) {
+            throw new Error(`Store url invalid`)
           }
           
           let searchResult: ShopifyProducts;
@@ -87,7 +86,6 @@ export async function researcher(
           try {
             searchResult = await shopifyStoreSearch(
               storeUrl, 
-              storeSearchUrl,
               filledQuery,
             )
           } 
@@ -184,11 +182,10 @@ export async function researcher(
 
 async function shopifyStoreSearch(
   storeUrl: string,
-  storeSearchUrl: string,
   query: string,
-): Promise<ShopifyProductsArray> {
+): Promise<> {
 
-  const url = `${storeSearchUrl}${encodeURIComponent(query)}`
+  const url = `${storeUrl}/products.json`
   const response = await fetch(url, {
     method: 'GET',
   })
@@ -197,6 +194,41 @@ async function shopifyStoreSearch(
     throw new Error(`Error: ${response.status}`)
   }
 
-  const data = await response.json()
-  return data
+  const products = await response.json()["products"]
+
+  const matchedProducts = []
+
+  // Get all the matched products (simplified products, removing all stupide information)
+  for (let i = 0; i < products.length; i++) {
+    const product = products[i]
+    const productImages = product["images"]
+    if (product["title"].includes(query)) {
+
+      const title = product["title"]
+      const description = product["body_html"]
+      const productType = product["product_type"]
+      const tags = product["tags"]
+
+      const imagesArray = []
+      for (let i = 0; i < productImages.lengh; i++) {
+        const currentImage = productImages[i]
+        imagesArray.push(currentImage["src"])
+      }
+
+      // Only use the first image
+      const image = imagesArray[0]
+
+      const matchedProduct = {
+        title: title,
+        description: description,
+        productType: productType,
+        tags: tags,
+        image: image,
+      }
+      matchedProducts.push(matchedProduct)
+    }
+  }
+
+  return matchedProducts
 }
+
