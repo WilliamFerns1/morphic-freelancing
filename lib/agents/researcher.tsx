@@ -109,7 +109,7 @@ Please match the language of the response to the user's language. The way you ge
           }
 
           let allImages: string[] = [];
-          searchResult.map((product, index: number) => {
+          searchResult.map((product: any, index: number) => {
             let imageUrl = product["image"]
             if (imageUrl) {
               allImages.push(imageUrl)
